@@ -1,4 +1,4 @@
-package http_template
+package headerloader
 
 import (
 	"bufio"
@@ -25,11 +25,14 @@ import (
 // with their original casing preserved. The order of regular header keys
 // will be stored in the http.HeaderOrderKey list.
 //
-// Special case: "cookie" headers.
-// The key "cookie" (case-insensitive match, but original case of the *first*
-// encountered cookie header preserved in order list) will be added to the
-// http.HeaderOrderKey list *only once*. The cookie key-value pair
-// will NOT be added to the main http.Header map.
+// Special cases:
+//   - "cookie": The key "cookie" (case-insensitive match, original case of the
+//     *first* encountered preserved) will be added to http.HeaderOrderKey *only once*.
+//     The cookie key-value pair will NOT be added to the main http.Header map.
+//   - "content-length": The key "content-length" (case-insensitive match, original
+//     case preserved) will be added to http.HeaderOrderKey. The content-length
+//     key-value pair will NOT be added to the main http.Header map. It is assumed
+//     to appear at most once in the template.
 func ParseHeaderTemplate(
 	templateStr string,
 	templateData interface{},
@@ -49,7 +52,7 @@ func ParseHeaderTemplate(
 	outputHeaders := make(http.Header)
 	var pseudoHeaderOrder []string
 	var regularHeaderOrder []string
-	cookieHeaderAddedToOrder := false // Flag to track if "cookie" is already in regularHeaderOrder
+	cookieHeaderAddedToOrder := false // Flag for "cookie"
 
 	scanner := bufio.NewScanner(strings.NewReader(processedStr))
 
@@ -128,20 +131,22 @@ func ParseHeaderTemplate(
 			// Pseudo-header values are not added to the main outputHeaders map.
 		} else {
 			// This is a regular HTTP header.
-			isCookieHeader := strings.ToLower(key) == "cookie"
+			lowerKey := strings.ToLower(key)
 
-			if isCookieHeader {
+			if lowerKey == "cookie" {
 				if !cookieHeaderAddedToOrder {
-					// Add "cookie" (with its original casing from this first encounter)
-					// to regularHeaderOrder only once.
-					regularHeaderOrder = append(regularHeaderOrder, key)
+					regularHeaderOrder = append(regularHeaderOrder, key) // Preserve original case
 					cookieHeaderAddedToOrder = true
 				}
 				// Cookie key-value pair is NOT added to outputHeaders map.
+			} else if lowerKey == "content-length" {
+				// Add "content-length" (with its original casing) to regularHeaderOrder.
+				// It's assumed to appear only once.
+				regularHeaderOrder = append(regularHeaderOrder, key) // Preserve original case
+				// Content-Length key-value pair is NOT added to outputHeaders map.
 			} else {
-				// For all other regular headers (not "cookie"):
-				// Add its key (preserving original case) to the regularHeaderOrder list.
-				regularHeaderOrder = append(regularHeaderOrder, key)
+				// For all other regular headers:
+				regularHeaderOrder = append(regularHeaderOrder, key) // Preserve original case
 				// Add the header to the map.
 				if existingValues, ok := outputHeaders[key]; ok {
 					outputHeaders[key] = append(existingValues, value)
